@@ -40,6 +40,19 @@ def api_metrics():
         print(f"IPC outcome: error ({str(e)})")
         return JSONResponse(status_code=503, content={"error": "ipc_error", "details": str(e)})
 
+@app.post("/api/probe")
+def api_probe():
+    print("POST /api/probe")
+    try:
+        r = ipc.request("serial_probe", timeout=0.5)
+        if r.get("ok"):
+            return r["result"]
+        else:
+            code = r.get("error", {}).get("code", "unknown_error")
+            return JSONResponse(status_code=409, content={"error": "serial_error", "details": code})
+    except Exception:
+        return JSONResponse(status_code=503, content={"error": "ipc_unavailable"})
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8080)

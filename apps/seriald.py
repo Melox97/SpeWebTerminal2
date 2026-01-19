@@ -3,6 +3,7 @@ import os
 import socket
 import threading
 import time
+import serial
 from datetime import datetime, timezone
 
 
@@ -27,6 +28,22 @@ class SerialDaemon:
             "model": "1.5KT",
             "connected": False,
             "last_error": None,
+        }
+
+        # Serial configuration from environment
+        env_port = os.getenv("SPE_SERIAL_PORT")
+        env_baud = os.getenv("SPE_SERIAL_BAUD", "115200")
+
+        self.serial_port = (env_port or "").strip() or None
+        try:
+            self.serial_baud = int(env_baud)
+        except ValueError:
+            self.serial_baud = 115200
+
+        self.state["serial"] = {
+            "port": self.serial_port,
+            "baud": self.serial_baud,
+            "last_probe_ts": None,
         }
 
         self._stop = threading.Event()
@@ -84,6 +101,46 @@ class SerialDaemon:
                     "uptime_s": int(self.uptime_s()),
                 },
             )
+
+        if method == "get_serial_config":
+            return self._ok(req_id, {"port": self.serial_port, "baud": self.serial_baud})
+
+        if method == "serial_probe":
+            self.state["serial"]["port"] = self.serial_port
+            self.state["serial"]["baud"] = self.serial_baud
+            self.state["serial"]["last_probe_ts"] = _utc_iso_z()
+
+            if not self.serial_port:
+                self.state["connected"] = False
+                self.state["last_error"] = "serial_not_configured"
+                return self._err(req_id, "serial_not_configured", "Serial port not configured")
+
+            try:
+                s = serial.Serial(self.serial_port, self.serial_baud, timeout=0.2)
+                s.close()
+                self.state["connected"] = True
+                self.state["last_error"] = None
+                return self._ok(
+                    req_id,
+                    {
+                        "success": True,
+                        "port": self.serial_port,
+                        "baud": self.serial_baud,
+                        "error": None,
+                    },
+                )
+            except Exception as e:
+                self.state["connected"] = False
+                self.state["last_error"] = "serial_open_failed"
+                return self._ok(
+                    req_id,
+                    {
+                        "success": False,
+                        "port": self.serial_port,
+                        "baud": self.serial_baud,
+                        "error": f"serial_open_failed: {str(e)}",
+                    },
+                )
 
         return self._err(req_id, "unknown_method", f"Unknown method: {method}")
 
