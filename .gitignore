@@ -8,3 +8,6 @@ Thumbs.db
 dist/
 build/
 *.log
+
+# Local runtime logs (never commit)
+log/

@@ -4,6 +4,8 @@ import socket
 import threading
 import time
 import serial
+import base64
+from collections import deque
 from datetime import datetime, timezone
 
 
@@ -44,9 +46,19 @@ class SerialDaemon:
             "port": self.serial_port,
             "baud": self.serial_baud,
             "last_probe_ts": None,
+            "is_open": False,
+            "last_open_ts": None,
+            "last_close_ts": None,
+            "last_rx_ts": None,
+            "last_tx_ts": None,
         }
 
         self._stop = threading.Event()
+        self._reader_stop = threading.Event()
+        self._ser_lock = threading.Lock()
+        self._ser = None
+        self._reader_thread = None
+        self._ring = deque(maxlen=50)
 
     def uptime_s(self) -> int:
         return int(time.time() - self.start_ts)
@@ -142,6 +154,97 @@ class SerialDaemon:
                     },
                 )
 
+        # Persistent open
+        if method == "serial_open":
+            self.state["serial"]["port"] = self.serial_port
+            self.state["serial"]["baud"] = self.serial_baud
+            if not self.serial_port:
+                self.state["connected"] = False
+                self.state["last_error"] = "serial_not_configured"
+                return self._err(req_id, "serial_not_configured", "Serial port not configured")
+
+            with self._ser_lock:
+                if self.state["serial"]["is_open"] and self._ser is not None:
+                    return self._ok(
+                        req_id,
+                        {
+                            "is_open": True,
+                            "port": self.serial_port,
+                            "baud": self.serial_baud,
+                        },
+                    )
+                try:
+                    self._ser = serial.Serial(self.serial_port, self.serial_baud, timeout=0.2)
+                    self.state["serial"]["is_open"] = True
+                    self.state["connected"] = True
+                    self.state["last_error"] = None
+                    ts = _utc_iso_z()
+                    self.state["serial"]["last_open_ts"] = ts
+                    self._reader_stop.clear()
+                    if not self._reader_thread or not self._reader_thread.is_alive():
+                        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+                        self._reader_thread.start()
+                    return self._ok(
+                        req_id,
+                        {
+                            "is_open": True,
+                            "port": self.serial_port,
+                            "baud": self.serial_baud,
+                        },
+                    )
+                except Exception as e:
+                    self._ser = None
+                    self.state["serial"]["is_open"] = False
+                    self.state["connected"] = False
+                    self.state["last_error"] = "serial_open_failed"
+                    return self._err(req_id, "serial_open_failed", str(e))
+
+        if method == "serial_close":
+            with self._ser_lock:
+                self._reader_stop.set()
+                if self._reader_thread and self._reader_thread.is_alive():
+                    self._reader_thread.join(timeout=1.0)
+                try:
+                    if self._ser is not None:
+                        try:
+                            self._ser.close()
+                        except Exception:
+                            pass
+                        self._ser = None
+                    self.state["serial"]["is_open"] = False
+                    self.state["connected"] = False
+                    ts = _utc_iso_z()
+                    self.state["serial"]["last_close_ts"] = ts
+                    return self._ok(req_id, {"is_open": False})
+                finally:
+                    self._reader_thread = None
+
+        if method == "serial_recent":
+            params = req.get("params") or {}
+            n = params.get("n", 50)
+            try:
+                n = int(n)
+            except Exception:
+                n = 50
+            items = list(self._ring)[-n:]
+            return self._ok(req_id, {"items": items})
+
+        if method == "serial_write":
+            params = req.get("params") or {}
+            data = params.get("data", "")
+            encoding = params.get("encoding", "utf-8")
+            with self._ser_lock:
+                if not self.state["serial"]["is_open"] or self._ser is None:
+                    return self._err(req_id, "serial_not_open", "Serial not open")
+                try:
+                    payload = (str(data) + "\n").encode(encoding)
+                    self._ser.write(payload)
+                    self.metrics["tx_bytes"] += len(payload)
+                    self.state["serial"]["last_tx_ts"] = _utc_iso_z()
+                    return self._ok(req_id, {"written": len(payload)})
+                except Exception as e:
+                    return self._err(req_id, "serial_write_failed", str(e))
+
         return self._err(req_id, "unknown_method", f"Unknown method: {method}")
 
     def serve_forever(self) -> None:
@@ -203,6 +306,30 @@ class SerialDaemon:
                             self.metrics["tx_bytes"] += len(out)
         finally:
             srv.close()
+
+    def _reader_loop(self) -> None:
+        print("serial reader thread started")
+        while not self._reader_stop.is_set():
+            with self._ser_lock:
+                ser = self._ser
+            if ser is None:
+                time.sleep(0.05)
+                continue
+            try:
+                chunk = ser.read(1024)
+            except Exception:
+                time.sleep(0.05)
+                continue
+            if chunk:
+                self.metrics["rx_bytes"] += len(chunk)
+                ts = _utc_iso_z()
+                self.state["serial"]["last_rx_ts"] = ts
+                b64 = base64.b64encode(chunk).decode("ascii")
+                self._ring.append({"ts": ts, "data_b64": b64})
+            else:
+                # respect timeout pacing
+                pass
+        print("serial reader thread stopped")
 
 
 def main() -> None:
