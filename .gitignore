@@ -11,3 +11,24 @@ build/
 
 # Local runtime logs (never commit)
 log/
+
+# --------------------------------------------------
+# Non-project documents (never commit)
+# --------------------------------------------------
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.odt
+*.ods
+*.odp
+*.rtf
+*.pages
+*.numbers
+*.key
+
+# Local/private folders
+_local/
