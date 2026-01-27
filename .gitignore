@@ -29,6 +29,9 @@ log/
 *.pages
 *.numbers
 *.key
+*.7z
+*.zip
+*.rar
 
 # Local/private folders
 _local/
