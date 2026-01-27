@@ -31,7 +31,8 @@ log/
 *.key
 *.7z
 *.zip
-*.rar
+*.rar   
 
 # Local/private folders
 _local/
+
