@@ -1,38 +1,58 @@
+############################
+# Python / Virtual env
+############################
 .venv/
+venv/
 __pycache__/
-*.pyc
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-dist/
+*.py[cod]
+*.pyo
+
+############################
+# Build / Distribution
+############################
 build/
+dist/
+*.egg-info/
+
+############################
+# Logs & runtime data
+############################
+log/
+logs/
 *.log
 
-# Local runtime logs (never commit)
-log/
+############################
+# Local data / generated files
+############################
+data/
+openapi.json
 
-# --------------------------------------------------
-# Non-project documents (never commit)
-# --------------------------------------------------
-*.pdf
-*.doc
-*.docx
-*.xls
-*.xlsx
-*.ppt
-*.pptx
-*.odt
-*.ods
-*.odp
-*.rtf
-*.pages
-*.numbers
-*.key
-*.7z
-*.zip
-*.rar   
+############################
+# IDE / Editors
+############################
+.vscode/
+.idea/
+*.swp
 
-# Local/private folders
-_local/
+############################
+# OS-specific
+############################
+.DS_Store
+Thumbs.db
 
+############################
+# Local scripts (not portable)
+############################
+dev/run_win.ps1
+
+############################
+# Local planning / AI support
+############################
+TODO_AI.md
+
+############################
+# Temporary / misc
+############################
+*.tmp
+*.bak
+*.old
