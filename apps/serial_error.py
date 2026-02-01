@@ -1,5 +1,5 @@
+from typing import TypedDict, NotRequired
 from datetime import datetime, timezone
-from typing import NotRequired, TypedDict
 
 
 class SerialError(TypedDict):
@@ -20,17 +20,15 @@ class SerialError(TypedDict):
 def bytes_to_hex_limited(data: bytes | None, max_bytes: int = 256) -> str | None:
     if data is None:
         return None
-    if max_bytes <= 0:
-        return ""
     return data[:max_bytes].hex()
 
 
 def make_serial_error(
+    *,
     layer: str,
     kind: str,
     op: str,
     retryable: bool,
-    *,
     port: str | None = None,
     baud: int | None = None,
     timeout_s: float | None = None,
@@ -39,8 +37,9 @@ def make_serial_error(
     detail: str | None = None,
     correlation_id: str | None = None,
 ) -> SerialError:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     err: SerialError = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": ts,
         "layer": layer,
         "kind": kind,
         "op": op,
