@@ -8,6 +8,9 @@ import base64
 from collections import deque
 from datetime import datetime, timezone
 
+from apps.serial_error import make_serial_error
+from apps.serial_error_store import ErrorStore
+
 
 def _utc_iso_z() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -59,6 +62,7 @@ class SerialDaemon:
         self._ser = None
         self._reader_thread = None
         self._ring = deque(maxlen=50)
+        self._errors = ErrorStore()
 
     def uptime_s(self) -> int:
         return int(time.time() - self.start_ts)
@@ -243,6 +247,17 @@ class SerialDaemon:
                     self.state["serial"]["last_tx_ts"] = _utc_iso_z()
                     return self._ok(req_id, {"written": len(payload)})
                 except Exception as e:
+                    self._errors.record(
+                        make_serial_error(
+                            layer="serial",
+                            kind="port_error",
+                            op="serial_write",
+                            retryable=True,
+                            port=self.serial_port,
+                            baud=self.serial_baud,
+                            detail=str(e),
+                        )
+                    )
                     return self._err(req_id, "serial_write_failed", str(e))
 
         return self._err(req_id, "unknown_method", f"Unknown method: {method}")
