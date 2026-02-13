@@ -1,63 +1,146 @@
 # SPE Web Terminal 2
 
-SPE Web Terminal 2 is an **independent and open-source project** that provides a
-local HTTP backend for monitoring and controlling SPE Expert linear amplifiers.
+SPE Web Terminal 2 is an independent open-source backend providing a local HTTP interface
+for monitoring and controlling SPE Expert linear amplifiers.
 
-This project is **not affiliated with, endorsed by, or supported by SPE**.
-It is developed as a community-driven initiative with a focus on simplicity,
-stability, and portability.
+This project is NOT affiliated with, endorsed by, or supported by SPE.
 
-## Overview
-
-The application exposes a minimal HTTP API and delegates all serial communication
-to a dedicated backend component.  
-The architecture is intentionally simple and designed to run on common platforms
-such as Windows, macOS, and Linux.
-
-Key goals:
-- clear separation of concerns
-- predictable behavior
+The focus is on:
+- reliability
+- clear architecture
 - minimal dependencies
-- local-first operation
+- cross-platform behavior (Windows, macOS, Linux)
+- incremental development without over-engineering
 
-## Architecture
+---
 
-The system is composed of three main parts:
+# Project Status
 
-- **HTTP Service**  
-  Exposes REST endpoints for status, metrics, and control.
+Current stable baseline tag:
 
-- **Serial Daemon**  
-  Handles low-level serial I/O with the amplifier (RS-232 / USB-VCP).
+- m4.1-tested — unified error model + unit tests + integration smoke + IPC stress validated
 
-- **IPC Layer**  
-  Internal communication channel between HTTP service and serial daemon.
+Development follows incremental milestones.
+See Milestone_4_Spec_SPE_Web_Terminal_2.md for details.
 
-This separation allows the HTTP layer to remain responsive even when the serial
-interface is unavailable or misconfigured.
+---
 
-## Logging and diagnostics
+# Architecture
 
-The application maintains **local runtime logs** for troubleshooting purposes.
+The system is composed of three main components:
 
-An optional debug endpoint allows generating **snapshot log files** that capture
-the current runtime state.  
-Snapshots are saved locally and are **not intended to be versioned or shared**.
+HTTP Service  <---->  IPC Layer  <---->  Serial Daemon  <---->  Amplifier
 
-The log directory is intentionally excluded from version control.
+1. HTTP Service  
+   Exposes REST endpoints for status, metrics, and control.
 
-## Project status
+2. Serial Daemon  
+   Handles low-level serial I/O (RS-232 / USB-VCP).  
+   Maintains runtime metrics and structured error reporting.
 
-The project is under active development and currently focuses on:
+3. IPC Layer  
+   Internal TCP-based communication between HTTP service and daemon.  
+   Prevents HTTP blocking due to serial failures.
 
-- backend stability
-- serial communication reliability
-- cross-platform behavior consistency
+---
 
-User interfaces, advanced control logic, and hardware-specific features will be
-introduced incrementally.
+# Installation
 
-## License
+## Requirements
 
-This project is released under an open-source license.  
-See the `LICENSE` file for details.
+- Python 3.11+
+- Windows, macOS or Linux
+- Virtual environment recommended
+
+## Setup
+
+Clone the repository:
+
+git clone <repository-url>
+cd SPEWebTerminal2
+
+Create virtual environment:
+
+python -m venv .venv
+
+Activate (Windows / Git Bash):
+
+source .venv/Scripts/activate
+
+Install dependencies:
+
+pip install -r requirements.txt
+pip install pytest
+
+---
+
+# Running the Serial Daemon
+
+From project root:
+
+python -m apps.seriald
+
+Default IPC configuration:
+- Host: 127.0.0.1
+- Port: 8765
+
+Serial configuration can be provided via environment variables:
+
+SPE_SERIAL_PORT=COM16
+SPE_SERIAL_BAUD=115200
+
+---
+
+# Testing
+
+## Unit Tests
+
+python -m pytest tests/unit
+
+## Integration Smoke Test
+
+python -m pytest tests/integration/test_seriald_ipc.py
+
+## IPC Stress Test (manual)
+
+python tests/integration/stress_ipc_ping.py
+
+Expected result:
+- 1000 ping requests
+- Errors: 0
+
+---
+
+# Error Model
+
+Milestone 4 introduces:
+
+- Structured SerialError
+- In-memory ErrorStore
+- Unified serial-layer error reporting
+
+Errors are:
+- timestamped (UTC ISO-8601)
+- JSON serializable
+- bounded in size
+- safe for diagnostics
+
+---
+
+# Development Philosophy
+
+- No premature abstraction
+- No unnecessary frameworks
+- Conservative refactors
+- Feature gating by milestone
+- Tests before feature expansion
+
+Tags are used as recovery anchors.
+
+---
+
+# License
+
+MIT License — see LICENSE file for details.
+
+Copyright (c) 2026 Melox97
