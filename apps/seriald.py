@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from apps.serial_error import make_serial_error
 from apps.serial_error_store import ErrorStore
-from apps.config import SERIAL_TIMEOUT_S_DEFAULT
+from apps.config import IPC_HOST_DEFAULT, IPC_PORT_DEFAULT, SERIAL_TIMEOUT_S_DEFAULT
 
 
 def _utc_iso_z() -> str:
@@ -18,7 +18,7 @@ def _utc_iso_z() -> str:
 
 
 class SerialDaemon:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+    def __init__(self, host: str = IPC_HOST_DEFAULT, port: int = IPC_PORT_DEFAULT) -> None:
         self.host = host
         self.port = port
 
