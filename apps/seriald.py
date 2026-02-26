@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from apps.serial_error import make_serial_error
 from apps.serial_error_store import ErrorStore
+from apps.config import SERIAL_TIMEOUT_S_DEFAULT
 
 
 def _utc_iso_z() -> str:
@@ -34,6 +35,8 @@ class SerialDaemon:
             "connected": False,
             "last_error": None,
         }
+
+        self.errors = ErrorStore()
 
         # Serial configuration from environment
         env_port = os.getenv("SPE_SERIAL_PORT")
@@ -62,7 +65,6 @@ class SerialDaemon:
         self._ser = None
         self._reader_thread = None
         self._ring = deque(maxlen=50)
-        self._errors = ErrorStore()
 
     def uptime_s(self) -> int:
         return int(time.time() - self.start_ts)
@@ -74,6 +76,31 @@ class SerialDaemon:
         self.metrics["errors"] += 1
         self.state["last_error"] = code
         return {"id": req_id, "ok": False, "error": {"code": code, "message": message}}
+
+    def _record_error(
+        self,
+        *,
+        kind: str,
+        op: str,
+        retryable: bool,
+        detail: str | None = None,
+        tx: bytes | None = None,
+        rx: bytes | None = None,
+    ) -> None:
+        err = make_serial_error(
+            layer="serial",
+            kind=kind,
+            op=op,
+            retryable=retryable,
+            port=self.serial_port,
+            baud=self.serial_baud,
+            timeout_s=SERIAL_TIMEOUT_S_DEFAULT,
+            tx=tx,
+            rx=rx,
+            detail=detail,
+        )
+        self.errors.add(err)
+        self.state["last_error"] = f"{err['layer']}:{err['kind']}:{err['op']}"
 
     def handle(self, req: dict) -> dict:
         if not isinstance(req, dict):
@@ -132,7 +159,7 @@ class SerialDaemon:
                 return self._err(req_id, "serial_not_configured", "Serial port not configured")
 
             try:
-                s = serial.Serial(self.serial_port, self.serial_baud, timeout=0.2)
+                s = serial.Serial(self.serial_port, self.serial_baud, timeout=SERIAL_TIMEOUT_S_DEFAULT)
                 s.close()
                 self.state["connected"] = True
                 self.state["last_error"] = None
@@ -178,7 +205,7 @@ class SerialDaemon:
                         },
                     )
                 try:
-                    self._ser = serial.Serial(self.serial_port, self.serial_baud, timeout=0.2)
+                    self._ser = serial.Serial(self.serial_port, self.serial_baud, timeout=SERIAL_TIMEOUT_S_DEFAULT)
                     self.state["serial"]["is_open"] = True
                     self.state["connected"] = True
                     self.state["last_error"] = None
@@ -247,16 +274,13 @@ class SerialDaemon:
                     self.state["serial"]["last_tx_ts"] = _utc_iso_z()
                     return self._ok(req_id, {"written": len(payload)})
                 except Exception as e:
-                    self._errors.record(
-                        make_serial_error(
-                            layer="serial",
-                            kind="port_error",
-                            op="serial_write",
-                            retryable=True,
-                            port=self.serial_port,
-                            baud=self.serial_baud,
-                            detail=str(e),
-                        )
+                    # record error for diagnostics
+                    self._record_error(
+                        kind="write_failed",
+                        op="serial_write",
+                        retryable=True,
+                        detail=str(e),
+                        tx=payload if "payload" in locals() else None,
                     )
                     return self._err(req_id, "serial_write_failed", str(e))
 
