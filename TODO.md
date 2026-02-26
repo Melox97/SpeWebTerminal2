@@ -41,3 +41,9 @@ Restore point: tag `m4.1-tested`.
 - [ ] Web-based user interface (optional)
 - [ ] Hardware-specific profiles (optional)
 - [ ] Optional authentication layer (only if remote exposure becomes a requirement)
+
+---
+
+### Completed in M4.2
+- Centralized IPC and Serial default configuration (no behavior change)
+- Added unit tests for configuration defaults
