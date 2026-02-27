@@ -1,105 +1,37 @@
-############################
-# Python / Virtual env
-############################
+# =========================
+# Python / venv
+# =========================
 .venv/
 venv/
+ENV/
 __pycache__/
 *.py[cod]
-*.pyo
-
-############################
-# pytest / coverage
-############################
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
-coverage.xml
 htmlcov/
-
-############################
-# Build / Distribution
-############################
-build/
 dist/
+build/
 *.egg-info/
-
-############################
-# Logs & runtime data
-############################
-log/
-logs/
-*.log
-
-############################
-# Local data / generated files
-############################
-data/
-openapi.json
-
-############################
-# IDE / Editors
-############################
+pip-wheel-metadata/
+# =========================
+# Editors / OS
+# =========================
 .vscode/
 .idea/
-*.swp
-
-############################
-# OS-specific
-############################
 .DS_Store
 Thumbs.db
-
-############################
-# Local scripts (not portable)
-############################
-dev/run_win.ps1
-
-############################
-# Local planning / AI support
-############################
-TODO_AI.md
-
-############################
-# Temporary / misc
-############################
-*.tmp
-*.bak
-*.old
-
-############################ 
-# archive
-############################
-*.7z
-*.zip
-*.rar
-
-############################ 
-# Microsoft Office files
-############################
-*.doc
-*.docx
-*.ppt
-*.pptx
-*.xls
-*.xlsx
-
-############################ 
-# Other documents
-############################
-*.odf
-*.pdf
-*.odt
-
-############################ 
-# Apple iWork files
-############################
-*.pages
-*.numbers
-*.keynote
-
-############################ 
-# photos
-############################
-*.jpeg
-*.heic
-*.bmp
-*.png
+# =========================
+# Local diagnostics logs
+# =========================
+status.txt
+stash.txt
+log.txt
+config_*.txt
+# =========================
+# Secrets (defensive)
+# =========================
+.env
+.env.*
