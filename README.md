@@ -144,3 +144,13 @@ Tags are used as recovery anchors.
 MIT License — see LICENSE file for details.
 
 Copyright (c) 2026 Melox97
+
+---
+
+# Configuration
+
+Environment variables:
+
+- SPE_SERIAL_PORT – Serial device path (e.g. COM3, /dev/ttyUSB0)
+- SPE_SERIAL_BAUD – Serial baud rate (default: 115200)
+
