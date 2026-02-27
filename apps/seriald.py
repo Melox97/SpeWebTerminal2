@@ -94,7 +94,7 @@ class SerialDaemon:
             retryable=retryable,
             port=self.serial_port,
             baud=self.serial_baud,
-            timeout_s=SERIAL_TIMEOUT_S_DEFAULT,
+            timeout_s=(SERIAL_TIMEOUT_S_DEFAULT if timeout_s is None else float(timeout_s)),
             tx=tx,
             rx=rx,
             detail=detail,
