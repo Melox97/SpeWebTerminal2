@@ -10,7 +10,15 @@ from datetime import datetime, timezone
 
 from apps.serial_error import make_serial_error
 from apps.serial_error_store import ErrorStore
-from apps.config import IPC_HOST_DEFAULT, IPC_PORT_DEFAULT, SERIAL_TIMEOUT_S_DEFAULT
+from apps.config import (
+    IPC_HOST_DEFAULT,
+    IPC_PORT_DEFAULT,
+    SERIAL_TIMEOUT_S_DEFAULT,
+    SERIAL_TXN_TIMEOUT_S_DEFAULT,
+    SERIAL_TXN_RETRIES_DEFAULT,
+    SERIAL_RETRY_BACKOFF_S_DEFAULT,
+)
+
 
 
 def _utc_iso_z() -> str:
@@ -83,6 +91,7 @@ class SerialDaemon:
         kind: str,
         op: str,
         retryable: bool,
+        timeout_s: float | None = None,
         detail: str | None = None,
         tx: bytes | None = None,
         rx: bytes | None = None,
@@ -264,25 +273,44 @@ class SerialDaemon:
             params = req.get("params") or {}
             data = params.get("data", "")
             encoding = params.get("encoding", "utf-8")
+
+            # Conservative transaction strategy:
+            # defaults keep current behavior (retries=0)
+            retries = int(SERIAL_TXN_RETRIES_DEFAULT)
+            backoff_s = float(SERIAL_RETRY_BACKOFF_S_DEFAULT)
+            txn_timeout_s = float(SERIAL_TXN_TIMEOUT_S_DEFAULT)
+
             with self._ser_lock:
                 if not self.state["serial"]["is_open"] or self._ser is None:
                     return self._err(req_id, "serial_not_open", "Serial not open")
-                try:
-                    payload = (str(data) + "\n").encode(encoding)
-                    self._ser.write(payload)
-                    self.metrics["tx_bytes"] += len(payload)
-                    self.state["serial"]["last_tx_ts"] = _utc_iso_z()
-                    return self._ok(req_id, {"written": len(payload)})
-                except Exception as e:
-                    # record error for diagnostics
-                    self._record_error(
-                        kind="write_failed",
-                        op="serial_write",
-                        retryable=True,
-                        detail=str(e),
-                        tx=payload if "payload" in locals() else None,
-                    )
-                    return self._err(req_id, "serial_write_failed", str(e))
+
+                last_exc: Exception | None = None
+
+                for attempt in range(retries + 1):
+                    try:
+                        payload = (str(data) + "\n").encode(encoding)
+                        self._ser.write(payload)
+                        self.metrics["tx_bytes"] += len(payload)
+                        self.state["serial"]["last_tx_ts"] = _utc_iso_z()
+                        return self._ok(req_id, {"written": len(payload)})
+                    except Exception as e:
+                        last_exc = e
+                        self._record_error(
+                            kind="write_failed",
+                            op="serial_write",
+                            retryable=(attempt < retries),
+                            detail=str(e),
+                            tx=payload if "payload" in locals() else None,
+                            timeout_s=txn_timeout_s,
+                        )
+                        if attempt < retries and backoff_s > 0:
+                            time.sleep(backoff_s)
+
+                return self._err(
+                    req_id,
+                    "serial_write_failed",
+                    str(last_exc) if last_exc else "unknown error",
+                )
 
         return self._err(req_id, "unknown_method", f"Unknown method: {method}")
 
