@@ -26,6 +26,10 @@ pip-wheel-metadata/
 .idea/
 .DS_Store
 Thumbs.db
+*.zip
+*.tar.gz
+*.rar
+*.7z
 
 # =========================
 # Local runtime artifacts (do NOT commit)
