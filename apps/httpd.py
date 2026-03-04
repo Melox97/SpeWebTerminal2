@@ -4,6 +4,7 @@ import ipc
 import shutil
 import os
 from datetime import datetime
+from apps.config import IPC_CALL_TIMEOUT_S_DEFAULT
 
 app = FastAPI()
 
@@ -33,7 +34,7 @@ def debug_get_log():
 def api_status():
     print("GET /api/status")
     try:
-        r = ipc.request("get_status", timeout=0.5)
+        r = ipc.request("get_status", timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]
@@ -49,7 +50,7 @@ def api_status():
 def api_metrics():
     print("GET /api/metrics")
     try:
-        r = ipc.request("get_metrics", timeout=0.5)
+        r = ipc.request("get_metrics", timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]
@@ -65,7 +66,7 @@ def api_metrics():
 def api_probe():
     print("POST /api/probe")
     try:
-        r = ipc.request("serial_probe", timeout=0.5)
+        r = ipc.request("serial_probe", timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             return r["result"]
         else:
@@ -89,7 +90,7 @@ def api_probe():
 def api_serial_open():
     print("POST /api/serial/open")
     try:
-        r = ipc.request("serial_open", timeout=0.5)
+        r = ipc.request("serial_open", timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]
@@ -105,7 +106,7 @@ def api_serial_open():
 def api_serial_close():
     print("POST /api/serial/close")
     try:
-        r = ipc.request("serial_close", timeout=0.5)
+        r = ipc.request("serial_close", timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]
@@ -121,7 +122,7 @@ def api_serial_close():
 def api_serial_recent(n: int = 50):
     print(f"GET /api/serial/recent?n={n}")
     try:
-        r = ipc.request("serial_recent", params={"n": n}, timeout=0.5)
+        r = ipc.request("serial_recent", params={"n": n}, timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]
@@ -138,7 +139,7 @@ def api_serial_write(payload: dict):
     print("POST /api/serial/write")
     try:
         data = payload.get("data", "")
-        r = ipc.request("serial_write", params={"data": data}, timeout=0.5)
+        r = ipc.request("serial_write", params={"data": data}, timeout=IPC_CALL_TIMEOUT_S_DEFAULT)
         if r.get("ok"):
             print("IPC outcome: ok")
             return r["result"]

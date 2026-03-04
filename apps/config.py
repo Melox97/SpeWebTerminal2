@@ -10,6 +10,9 @@ IPC_HOST_DEFAULT = "127.0.0.1"
 IPC_PORT_DEFAULT = 8765
 IPC_TIMEOUT_S_DEFAULT = 1.5  # reserved for future IPC client usage
 
+# HTTP->IPC call timeout (keeps current behavior from apps/httpd.py and apps/ipc.py)
+IPC_CALL_TIMEOUT_S_DEFAULT = 0.5
+
 # Serial defaults
 SERIAL_TIMEOUT_S_DEFAULT = 0.2  # matches current seriald behavior
 SERIAL_BAUD_DEFAULT = 115200

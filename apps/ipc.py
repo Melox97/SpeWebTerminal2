@@ -2,10 +2,12 @@ import socket
 import json
 import time
 
-HOST = "127.0.0.1"
-PORT = 8765
+from apps.config import IPC_HOST_DEFAULT, IPC_PORT_DEFAULT, IPC_CALL_TIMEOUT_S_DEFAULT
 
-def request(method, params=None, timeout=0.5):
+HOST = IPC_HOST_DEFAULT
+PORT = IPC_PORT_DEFAULT
+
+def request(method, params=None, timeout=IPC_CALL_TIMEOUT_S_DEFAULT):
     if params is None:
         params = {}
     req = {"id": int(time.time() * 1000), "method": method, "params": params}
