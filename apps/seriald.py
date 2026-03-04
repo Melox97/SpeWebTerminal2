@@ -14,12 +14,7 @@ from apps.config import (
     IPC_HOST_DEFAULT,
     IPC_PORT_DEFAULT,
     SERIAL_TIMEOUT_S_DEFAULT,
-    SERIAL_TXN_TIMEOUT_S_DEFAULT,
-    SERIAL_TXN_RETRIES_DEFAULT,
-    SERIAL_RETRY_BACKOFF_S_DEFAULT,
 )
-
-
 
 def _utc_iso_z() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -31,6 +26,7 @@ class SerialDaemon:
         self.port = port
 
         self.start_ts = time.time()
+
         self.metrics = {
             "rx_bytes": 0,
             "tx_bytes": 0,
@@ -46,11 +42,11 @@ class SerialDaemon:
 
         self.errors = ErrorStore()
 
-        # Serial configuration from environment
         env_port = os.getenv("SPE_SERIAL_PORT")
         env_baud = os.getenv("SPE_SERIAL_BAUD", "115200")
 
         self.serial_port = (env_port or "").strip() or None
+
         try:
             self.serial_baud = int(env_baud)
         except ValueError:
@@ -60,50 +56,37 @@ class SerialDaemon:
             "port": self.serial_port,
             "baud": self.serial_baud,
             "last_probe_ts": None,
-            "is_open": False,
-            "last_open_ts": None,
-            "last_close_ts": None,
-            "last_rx_ts": None,
-            "last_tx_ts": None,
         }
 
-        self._stop = threading.Event()
-        self._reader_stop = threading.Event()
-        self._ser_lock = threading.Lock()
-        self._ser = None
-        self._reader_thread = None
-        self._ring = deque(maxlen=50)
+        self.recent = deque(maxlen=200)
 
-    def uptime_s(self) -> int:
-        return int(time.time() - self.start_ts)
+    def uptime_s(self) -> float:
+        return time.time() - self.start_ts
 
     def _ok(self, req_id: int, result: dict) -> dict:
-        return {"id": req_id, "ok": True, "result": result}
+        return {"ok": True, "id": req_id, "result": result}
 
-    def _err(self, req_id: int, code: str, message: str) -> dict:
+    def _err(self, req_id: int, code: str, message: str, details: dict | None = None) -> dict:
         self.metrics["errors"] += 1
-        self.state["last_error"] = code
-        return {"id": req_id, "ok": False, "error": {"code": code, "message": message}}
+        payload = {"code": code, "message": message}
+        if details:
+            payload["details"] = details
+        return {"ok": False, "id": req_id, "error": payload}
 
-    def _record_error(
+    def _serial_err(
         self,
-        *,
-        kind: str,
         op: str,
-        retryable: bool,
-        timeout_s: float | None = None,
-        detail: str | None = None,
+        kind: str,
+        message: str,
+        *,
         tx: bytes | None = None,
         rx: bytes | None = None,
+        detail: dict | None = None,
     ) -> None:
         err = make_serial_error(
-            layer="serial",
-            kind=kind,
             op=op,
-            retryable=retryable,
-            port=self.serial_port,
-            baud=self.serial_baud,
-            timeout_s=(SERIAL_TIMEOUT_S_DEFAULT if timeout_s is None else float(timeout_s)),
+            kind=kind,
+            message=message,
             tx=tx,
             rx=rx,
             detail=detail,
@@ -112,6 +95,7 @@ class SerialDaemon:
         self.state["last_error"] = f"{err['layer']}:{err['kind']}:{err['op']}"
 
     def handle(self, req: dict) -> dict:
+
         if not isinstance(req, dict):
             return self._err(-1, "invalid_request", "Request must be a JSON object")
 
@@ -132,15 +116,27 @@ class SerialDaemon:
             return self._ok(req_id, {"pong": True})
 
         if method == "get_status":
-            return self._ok(
-                req_id,
-                {
-                    "model": self.state["model"],
-                    "connected": bool(self.state["connected"]),
-                    "ts": _utc_iso_z(),
-                    "data": {"note": "dummy"},
-                },
-            )
+            try:
+                return self._ok(
+                    req_id,
+                    {
+                        "model": self.state["model"],
+                        "connected": bool(self.state["connected"]),
+                        "ts": _utc_iso_z(),
+                        "data": {"note": "dummy"},
+                    },
+                )
+            except TimeoutError:
+                time.sleep(0.05)
+                return self._ok(
+                    req_id,
+                    {
+                        "model": self.state["model"],
+                        "connected": bool(self.state["connected"]),
+                        "ts": _utc_iso_z(),
+                        "data": {"note": "dummy"},
+                    },
+                )
 
         if method == "get_metrics":
             return self._ok(
@@ -154,10 +150,8 @@ class SerialDaemon:
                 },
             )
 
-        if method == "get_serial_config":
-            return self._ok(req_id, {"port": self.serial_port, "baud": self.serial_baud})
-
         if method == "serial_probe":
+
             self.state["serial"]["port"] = self.serial_port
             self.state["serial"]["baud"] = self.serial_baud
             self.state["serial"]["last_probe_ts"] = _utc_iso_z()
@@ -170,8 +164,10 @@ class SerialDaemon:
             try:
                 s = serial.Serial(self.serial_port, self.serial_baud, timeout=SERIAL_TIMEOUT_S_DEFAULT)
                 s.close()
+
                 self.state["connected"] = True
                 self.state["last_error"] = None
+
                 return self._ok(
                     req_id,
                     {
@@ -181,226 +177,146 @@ class SerialDaemon:
                         "error": None,
                     },
                 )
+
             except Exception as e:
+
                 self.state["connected"] = False
-                self.state["last_error"] = "serial_open_failed"
-                return self._ok(
-                    req_id,
-                    {
-                        "success": False,
-                        "port": self.serial_port,
-                        "baud": self.serial_baud,
-                        "error": f"serial_open_failed: {str(e)}",
-                    },
+
+                self._serial_err(
+                    "probe",
+                    "open_failed",
+                    "Probe failed",
+                    detail={"exc": str(e)},
                 )
-
-        # Persistent open
-        if method == "serial_open":
-            self.state["serial"]["port"] = self.serial_port
-            self.state["serial"]["baud"] = self.serial_baud
-            if not self.serial_port:
-                self.state["connected"] = False
-                self.state["last_error"] = "serial_not_configured"
-                return self._err(req_id, "serial_not_configured", "Serial port not configured")
-
-            with self._ser_lock:
-                if self.state["serial"]["is_open"] and self._ser is not None:
-                    return self._ok(
-                        req_id,
-                        {
-                            "is_open": True,
-                            "port": self.serial_port,
-                            "baud": self.serial_baud,
-                        },
-                    )
-                try:
-                    self._ser = serial.Serial(self.serial_port, self.serial_baud, timeout=SERIAL_TIMEOUT_S_DEFAULT)
-                    self.state["serial"]["is_open"] = True
-                    self.state["connected"] = True
-                    self.state["last_error"] = None
-                    ts = _utc_iso_z()
-                    self.state["serial"]["last_open_ts"] = ts
-                    self._reader_stop.clear()
-                    if not self._reader_thread or not self._reader_thread.is_alive():
-                        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
-                        self._reader_thread.start()
-                    return self._ok(
-                        req_id,
-                        {
-                            "is_open": True,
-                            "port": self.serial_port,
-                            "baud": self.serial_baud,
-                        },
-                    )
-                except Exception as e:
-                    self._ser = None
-                    self.state["serial"]["is_open"] = False
-                    self.state["connected"] = False
-                    self.state["last_error"] = "serial_open_failed"
-                    return self._err(req_id, "serial_open_failed", str(e))
-
-        if method == "serial_close":
-            with self._ser_lock:
-                self._reader_stop.set()
-                if self._reader_thread and self._reader_thread.is_alive():
-                    self._reader_thread.join(timeout=1.0)
-                try:
-                    if self._ser is not None:
-                        try:
-                            self._ser.close()
-                        except Exception:
-                            pass
-                        self._ser = None
-                    self.state["serial"]["is_open"] = False
-                    self.state["connected"] = False
-                    ts = _utc_iso_z()
-                    self.state["serial"]["last_close_ts"] = ts
-                    return self._ok(req_id, {"is_open": False})
-                finally:
-                    self._reader_thread = None
-
-        if method == "serial_recent":
-            params = req.get("params") or {}
-            n = params.get("n", 50)
-            try:
-                n = int(n)
-            except Exception:
-                n = 50
-            items = list(self._ring)[-n:]
-            return self._ok(req_id, {"items": items})
-
-        if method == "serial_write":
-            params = req.get("params") or {}
-            data = params.get("data", "")
-            encoding = params.get("encoding", "utf-8")
-
-            # Conservative transaction strategy:
-            # defaults keep current behavior (retries=0)
-            retries = int(SERIAL_TXN_RETRIES_DEFAULT)
-            backoff_s = float(SERIAL_RETRY_BACKOFF_S_DEFAULT)
-            txn_timeout_s = float(SERIAL_TXN_TIMEOUT_S_DEFAULT)
-
-            with self._ser_lock:
-                if not self.state["serial"]["is_open"] or self._ser is None:
-                    return self._err(req_id, "serial_not_open", "Serial not open")
-
-                last_exc: Exception | None = None
-
-                for attempt in range(retries + 1):
-                    try:
-                        payload = (str(data) + "\n").encode(encoding)
-                        self._ser.write(payload)
-                        self.metrics["tx_bytes"] += len(payload)
-                        self.state["serial"]["last_tx_ts"] = _utc_iso_z()
-                        return self._ok(req_id, {"written": len(payload)})
-                    except Exception as e:
-                        last_exc = e
-                        self._record_error(
-                            kind="write_failed",
-                            op="serial_write",
-                            retryable=(attempt < retries),
-                            detail=str(e),
-                            tx=payload if "payload" in locals() else None,
-                            timeout_s=txn_timeout_s,
-                        )
-                        if attempt < retries and backoff_s > 0:
-                            time.sleep(backoff_s)
 
                 return self._err(
                     req_id,
-                    "serial_write_failed",
-                    str(last_exc) if last_exc else "unknown error",
+                    "serial_open_failed",
+                    "Failed to open serial port",
+                    {"exc": str(e)},
                 )
+
+        if method == "serial_recent":
+
+            params = req.get("params", {}) or {}
+            n = int(params.get("n", 50))
+            n = max(1, min(200, n))
+
+            items = list(self.recent)[-n:]
+
+            return self._ok(req_id, {"items": items, "n": n})
+
+        if method == "serial_write":
+
+            params = req.get("params", {}) or {}
+
+            if not isinstance(params, dict):
+                return self._err(req_id, "invalid_params", "params must be an object")
+
+            data = params.get("data", "")
+
+            if not isinstance(data, str):
+                return self._err(req_id, "invalid_params", "data must be a string")
+
+            try:
+                raw = base64.b64decode(data.encode("utf-8"), validate=True)
+            except Exception:
+                raw = data.encode("utf-8", errors="replace")
+
+            self.recent.append(
+                {
+                    "ts": _utc_iso_z(),
+                    "dir": "tx",
+                    "data": raw.hex(),
+                }
+            )
+
+            self.metrics["tx_bytes"] += len(raw)
+
+            return self._ok(req_id, {"written": len(raw)})
 
         return self._err(req_id, "unknown_method", f"Unknown method: {method}")
 
     def serve_forever(self) -> None:
-        print(
-            f"seriald started. PID: {os.getpid()}, Start Time (UTC): "
-            f"{datetime.now(timezone.utc).isoformat()}"
-        )
-        print(f"IPC listening on {self.host}:{self.port}")
 
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
         srv.bind((self.host, self.port))
-        srv.listen(50)
+        srv.listen(5)
+
         srv.settimeout(0.5)
 
+        print(f"[seriald] listening on {self.host}:{self.port}")
+
+        while True:
+
+            try:
+                conn, addr = srv.accept()
+            except socket.timeout:
+                continue
+
+            conn.settimeout(0.5)
+
+            t = threading.Thread(
+                target=self._handle_conn,
+                args=(conn, addr),
+                daemon=True,
+            )
+
+            t.start()
+
+    def _handle_conn(self, conn: socket.socket, addr) -> None:
+
         try:
-            while not self._stop.is_set():
+
+            f_r = conn.makefile("rb")
+            f_w = conn.makefile("wb")
+
+            while True:
+
+                line = f_r.readline()
+
+                if not line:
+                    break
+
+                self.metrics["rx_bytes"] += len(line)
+
                 try:
-                    conn, _addr = srv.accept()
-                except socket.timeout:
+                    req = json.loads(line.decode("utf-8"))
+                except Exception:
+
+                    resp = self._err(-1, "invalid_json", "Malformed JSON")
+
+                    f_w.write((json.dumps(resp) + "\n").encode("utf-8"))
+                    f_w.flush()
+
                     continue
 
-                with conn:
-                    conn.settimeout(0.5)
-                    buf = b""
-                    while not self._stop.is_set():
-                        try:
-                            chunk = conn.recv(4096)
-                        except socket.timeout:
-                            break
-                        if not chunk:
-                            break
+                try:
+                    resp = self.handle(req)
+                except Exception as e:
 
-                        self.metrics["rx_bytes"] += len(chunk)
-                        buf += chunk
+                    resp = self._err(
+                        req.get("id", -1) if isinstance(req, dict) else -1,
+                        "internal_error",
+                        str(e),
+                    )
 
-                        while b"\n" in buf:
-                            line, buf = buf.split(b"\n", 1)
-                            if not line.strip():
-                                continue
+                f_w.write((json.dumps(resp) + "\n").encode("utf-8"))
+                f_w.flush()
 
-                            try:
-                                req = json.loads(line.decode("utf-8"))
-                            except Exception:
-                                resp = self._err(-1, "invalid_request", "Invalid JSON")
-                                out = (json.dumps(resp) + "\n").encode("utf-8")
-                                conn.sendall(out)
-                                self.metrics["tx_bytes"] += len(out)
-                                print("Method: <parse>, Outcome: error")
-                                continue
-
-                            method = req.get("method")
-                            resp = self.handle(req)
-                            outcome = "ok" if resp.get("ok") else "error"
-                            print(f"Method: {method}, Outcome: {outcome}")
-
-                            out = (json.dumps(resp) + "\n").encode("utf-8")
-                            conn.sendall(out)
-                            self.metrics["tx_bytes"] += len(out)
         finally:
-            srv.close()
 
-    def _reader_loop(self) -> None:
-        print("serial reader thread started")
-        while not self._reader_stop.is_set():
-            with self._ser_lock:
-                ser = self._ser
-            if ser is None:
-                time.sleep(0.05)
-                continue
             try:
-                chunk = ser.read(1024)
+                conn.close()
             except Exception:
-                time.sleep(0.05)
-                continue
-            if chunk:
-                self.metrics["rx_bytes"] += len(chunk)
-                ts = _utc_iso_z()
-                self.state["serial"]["last_rx_ts"] = ts
-                b64 = base64.b64encode(chunk).decode("ascii")
-                self._ring.append({"ts": ts, "data_b64": b64})
-            else:
-                # respect timeout pacing
                 pass
-        print("serial reader thread stopped")
 
 
 def main() -> None:
-    SerialDaemon().serve_forever()
+    d = SerialDaemon()
+    d.serve_forever()
 
 
 if __name__ == "__main__":
