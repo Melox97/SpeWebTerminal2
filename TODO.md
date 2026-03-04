@@ -1,49 +1,72 @@
-# Project TODO
+# SPE Web Terminal 2 — Project TODO
 
-This TODO is intentionally short and milestone-driven.
-Restore point: tag `m4.1-tested`.
+This file tracks short-term development tasks.
 
----
-
-## Done
-- [x] M4.1: Structured SerialError model
-- [x] M4.1: ErrorStore ring buffer
-- [x] M4.1: Record at least one real serial error path (serial_write_failed)
-- [x] M4.1: Unit tests (SerialError + ErrorStore)
-- [x] M4.1: Integration smoke test (daemon boots + IPC ping)
-- [x] M4.1: IPC stress script (1000 sequential ping requests, 0 errors)
+The project follows an incremental milestone strategy focused on reliability and stability.
 
 ---
 
-## Next (Milestone 4.2) — Timeout & retry policy
-- [ ] Define a single source of truth for timeouts (IPC + serial)
-- [ ] Standardize timeout error mapping (ipc_timeout vs serial timeout)
-- [ ] Add minimal retry policy for idempotent operations only (max 1 retry)
-- [ ] Add integration test(s) for timeout behavior (virtual / harness)
+# Current Milestone
+
+Milestone 4.2 — Transaction Timeout Strategy
+
+Branch: `milestone-4.2`
+
+Goal:
+
+Introduce a safe framework for transaction-aware retry and timeout handling in the serial daemon.
+
+Important rule:
+
+Default behaviour must remain unchanged unless explicitly enabled.
 
 ---
 
-## Next (Milestone 4.3) — Edge-case test harness (virtual/loopback)
-- [ ] Document a repeatable loopback setup (COM0COM on Windows; equivalent notes for Linux/macOS)
-- [ ] Add at least 3 reproducible test cases (timeout, partial frame, port disappears)
-- [ ] Validate that last/recent errors reflect expected layer/kind/op
+# Completed Recently
+
+- Stabilized `apps/seriald.py`
+- Restored clean serial daemon implementation
+- Introduced transaction retry framework structure
+- Default retry count set to **0** (no behaviour change)
+- Added Windows development launcher (`dev/run_win.ps1`)
+- Repository cleanup and `.gitignore` stabilization
+- Documentation alignment for new development sessions
 
 ---
 
-## Mid term
-- [ ] Extend serial command coverage (incremental, hardware-safe)
-- [ ] Improve HTTP API documentation (OpenAPI + examples)
-- [ ] Optional config file support (keep env vars as primary)
+# Next Tasks
+
+Serial layer improvements:
+
+- Implement transaction-aware timeout handling
+- Improve retry/backoff policy
+- Extend structured error metadata
+- Improve diagnostic logging
+
+Testing:
+
+- Serial failure simulation
+- Timeout handling validation
+- IPC stress validation
 
 ---
 
-## Long term
-- [ ] Web-based user interface (optional)
-- [ ] Hardware-specific profiles (optional)
-- [ ] Optional authentication layer (only if remote exposure becomes a requirement)
+# Later Tasks
+
+Future improvements planned after Milestone 4 completion:
+
+- Protocol layer stabilization
+- Amplifier state synchronization
+- Web interface integration
+- Production hardening
 
 ---
 
-### Completed in M4.2
-- Centralized IPC and Serial default configuration (no behavior change)
-- Added unit tests for configuration defaults
+# Notes
+
+All development must follow the project philosophy:
+
+- minimal dependencies
+- conservative modifications
+- no unnecessary refactoring
+- test before commit
